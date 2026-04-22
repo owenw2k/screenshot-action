@@ -2,20 +2,18 @@
  * Helpers for starting and stopping the base-ref dev server in a worktree.
  */
 
-"use strict";
-
-const { execSync, spawn } = require("child_process");
-const http = require("http");
+import { ChildProcess, execSync, spawn } from "child_process";
+import http from "http";
 
 /**
  * Polls a URL until it responds with a non-error status, up to a timeout.
  *
- * @param {string} url - URL to poll.
- * @param {number} timeoutMs - Maximum wait time in milliseconds.
- * @returns {Promise<void>} Resolves when the server is ready.
- * @throws {Error} If the server does not respond within the timeout.
+ * @param url - URL to poll.
+ * @param timeoutMs - Maximum wait time in milliseconds.
+ * @returns Promise that resolves when the server is ready.
+ * @throws Error if the server does not respond within the timeout.
  */
-const waitForServer = (url, timeoutMs = 60_000) =>
+const waitForServer = (url: string, timeoutMs = 60_000): Promise<void> =>
   new Promise((resolve, reject) => {
     const start = Date.now();
 
@@ -43,19 +41,28 @@ const waitForServer = (url, timeoutMs = 60_000) =>
     poll();
   });
 
+interface StartServerOpts {
+  cwd: string;
+  installCommand: string;
+  buildCommand: string;
+  serveCommand: string;
+  port: number;
+}
+
 /**
  * Runs install and build commands in the worktree, then starts the server.
  * Returns the child process so the caller can stop it when done.
  *
- * @param {object} opts
- * @param {string} opts.cwd - Working directory (worktree path).
- * @param {string} opts.installCommand - Shell command to install dependencies.
- * @param {string} opts.buildCommand - Shell command to build the app.
- * @param {string} opts.serveCommand - Shell command to start the server.
- * @param {number} opts.port - Port to start the server on.
- * @returns {Promise<import("child_process").ChildProcess>} Running server process.
+ * @param opts - Server options including cwd, commands, and port.
+ * @returns Running server process.
  */
-const startBaseServer = async ({ cwd, installCommand, buildCommand, serveCommand, port }) => {
+export const startBaseServer = async ({
+  cwd,
+  installCommand,
+  buildCommand,
+  serveCommand,
+  port,
+}: StartServerOpts): Promise<ChildProcess> => {
   console.log(`[server] installing dependencies in worktree: ${installCommand}`);
   execSync(installCommand, { cwd, stdio: "inherit", shell: true });
 
@@ -78,14 +85,12 @@ const startBaseServer = async ({ cwd, installCommand, buildCommand, serveCommand
 /**
  * Stops a server process spawned by startBaseServer.
  *
- * @param {import("child_process").ChildProcess} proc - Process to stop.
+ * @param proc - Process to stop.
  */
-const stopServer = (proc) => {
+export const stopServer = (proc: ChildProcess): void => {
   try {
     process.kill(-proc.pid, "SIGTERM");
   } catch {
     // process already exited
   }
 };
-
-module.exports = { startBaseServer, stopServer };

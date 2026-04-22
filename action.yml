@@ -47,7 +47,7 @@ runs:
   steps:
     - name: Install action dependencies
       shell: bash
-      run: cd "${{ github.action_path }}" && npm install --omit=dev
+      run: cd "${{ github.action_path }}" && npm install
 
     - name: Install Playwright browser
       shell: bash
@@ -67,4 +67,4 @@ runs:
         DARK_MODE_LABEL: ${{ inputs.dark-mode-toggle-label }}
         REPO: ${{ github.repository }}
         EVENT_NAME: ${{ github.event_name }}
-      run: node "${{ github.action_path }}/scripts/main.js"
+      run: cd "${{ github.action_path }}" && node_modules/.bin/tsx scripts/main.ts
