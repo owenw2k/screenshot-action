@@ -2,32 +2,38 @@
  * Screenshot capture: finds all [data-screenshot] sections on a page and
  * captures each in light mode. If a dark-mode toggle label is provided,
  * also captures in dark mode.
- *
- * @module capture
  */
 
-"use strict";
+import fs from "fs";
+import path from "path";
+import { chromium, Page } from "@playwright/test";
 
-const fs = require("fs");
-const path = require("path");
-const { chromium } = require("@playwright/test");
+interface CaptureOpts {
+  baseUrl: string;
+  outputDir: string;
+  darkModeLabel?: string;
+}
+
+interface ScreenshotResult {
+  light: string;
+  dark?: string;
+}
 
 /**
  * Captures screenshots for all [data-screenshot] sections reachable via baseUrl.
  *
- * @param {object} opts
- * @param {string} opts.baseUrl - Root URL of the running server.
- * @param {string} opts.outputDir - Directory to write PNG files into.
- * @param {string} [opts.darkModeLabel] - Accessible label of the dark-mode toggle.
- *   When provided, dark-mode variants are captured in addition to light.
- * @returns {Promise<Record<string, { light: string, dark?: string }>>}
- *   Map of section name to file paths of the captured PNGs.
+ * @param opts - Capture options including baseUrl, output directory, and optional dark mode label.
+ * @returns Map of section name to file paths of the captured PNGs.
  */
-const capture = async ({ baseUrl, outputDir, darkModeLabel }) => {
+export const capture = async ({
+  baseUrl,
+  outputDir,
+  darkModeLabel,
+}: CaptureOpts): Promise<Record<string, ScreenshotResult>> => {
   fs.mkdirSync(outputDir, { recursive: true });
 
   const browser = await chromium.launch();
-  const results = {};
+  const results: Record<string, ScreenshotResult> = {};
 
   try {
     // Light mode pass
@@ -41,7 +47,7 @@ const capture = async ({ baseUrl, outputDir, darkModeLabel }) => {
     }
 
     for (const section of sections) {
-      const name = await section.getAttribute("data-screenshot");
+      const name = (await section.getAttribute("data-screenshot")) || "unknown";
       const filePath = path.join(outputDir, `${name}-light.png`);
       await section.screenshot({ path: filePath });
       results[name] = { light: filePath };
@@ -62,7 +68,7 @@ const capture = async ({ baseUrl, outputDir, darkModeLabel }) => {
 
         const darkSections = await darkPage.$$("[data-screenshot]");
         for (const section of darkSections) {
-          const name = await section.getAttribute("data-screenshot");
+          const name = (await section.getAttribute("data-screenshot")) || "unknown";
           const filePath = path.join(outputDir, `${name}-dark.png`);
           await section.screenshot({ path: filePath });
           if (results[name]) {
@@ -82,5 +88,3 @@ const capture = async ({ baseUrl, outputDir, darkModeLabel }) => {
 
   return results;
 };
-
-module.exports = { capture };

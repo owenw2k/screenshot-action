@@ -90,6 +90,24 @@ jobs:
 | `serve-command` | no | `npm start` | Server start command for the base-ref worktree |
 | `dark-mode-toggle-label` | no | `""` | Accessible label of the dark-mode toggle button. Omit to capture light mode only. |
 
+## Optional inputs explained
+
+These inputs are optional but recommended for non-default setups:
+
+- **`base-ref`** — The ref to compare against. Defaults to `main`. If the ref does not exist, the action skips "before" screenshots gracefully and marks all sections as new.
+
+- **`install-command`**, **`build-command`**, **`serve-command`** — Used to build and run the base-ref in a git worktree. Defaults assume an npm-based project. For pnpm or yarn, override all three:
+  ```yaml
+  with:
+    install-command: pnpm install --frozen-lockfile
+    build-command: pnpm build
+    serve-command: pnpm start
+  ```
+
+- **`dark-mode-toggle-label`** — If your site has a dark mode toggle, pass the accessible label (or a substring). The action will capture both light and dark variants. Omit this input to capture light mode only.
+
+The dark-mode toggle must be reachable via `getByRole("button", { name: /label/i })`. For example, if your toggle has `aria-label="Toggle dark mode"`, pass `"toggle dark mode"` or just `"dark mode"`.
+
 ## How sections are captured
 
 Screenshots are captured at 1280x800. When `dark-mode-toggle-label` is set, the

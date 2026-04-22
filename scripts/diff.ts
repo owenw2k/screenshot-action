@@ -2,35 +2,42 @@
  * Pixel-level image diff using pixelmatch + pngjs.
  * Compares before and after screenshot sets and returns only the sections
  * that actually changed (or are new with no before).
- *
- * @module diff
  */
 
-"use strict";
-
-const fs = require("fs");
-const { PNG } = require("pngjs");
-const pixelmatch = require("pixelmatch");
+import fs from "fs";
+import { PNG } from "pngjs";
+import pixelmatch from "pixelmatch";
 
 /** Pixel-difference threshold passed to pixelmatch (0 = exact, 1 = lenient). */
 const DIFF_THRESHOLD = 0.1;
 
+interface ScreenshotResult {
+  light: string;
+  dark?: string;
+}
+
+interface DiffEntry {
+  isNew: boolean;
+  before?: ScreenshotResult;
+  after: ScreenshotResult;
+}
+
 /**
  * Reads a PNG file and returns a parsed PNG object.
  *
- * @param {string} filePath - Absolute or relative path to the PNG.
- * @returns {PNG} Parsed pngjs PNG instance.
+ * @param filePath - Path to the PNG file.
+ * @returns Parsed pngjs PNG instance.
  */
-const readPng = (filePath) => PNG.sync.read(fs.readFileSync(filePath));
+const readPng = (filePath: string): PNG => PNG.sync.read(fs.readFileSync(filePath));
 
 /**
  * Returns true if two PNG files differ by more than zero pixels above the threshold.
  *
- * @param {string} beforePath - Path to the "before" PNG.
- * @param {string} afterPath - Path to the "after" PNG.
- * @returns {boolean} True when the images differ.
+ * @param beforePath - Path to the "before" PNG.
+ * @param afterPath - Path to the "after" PNG.
+ * @returns True when the images differ.
  */
-const imagesAreDifferent = (beforePath, afterPath) => {
+const imagesAreDifferent = (beforePath: string, afterPath: string): boolean => {
   const before = readPng(beforePath);
   const after = readPng(afterPath);
 
@@ -49,16 +56,15 @@ const imagesAreDifferent = (beforePath, afterPath) => {
 /**
  * Compares two screenshot sets and returns only the sections that changed or are new.
  *
- * @param {Record<string, { light: string, dark?: string }>} before
- *   Map of section name to before-screenshot paths. Pass an empty object when
- *   there are no baselines (e.g. the base ref could not be checked out).
- * @param {Record<string, { light: string, dark?: string }>} after
- *   Map of section name to after-screenshot paths.
- * @returns {Record<string, { isNew: boolean, before?: { light: string, dark?: string }, after: { light: string, dark?: string } }>}
- *   Only the changed or new sections.
+ * @param before - Map of section name to before-screenshot paths. Empty object when no baselines exist.
+ * @param after - Map of section name to after-screenshot paths.
+ * @returns Only the changed or new sections.
  */
-const diff = (before, after) => {
-  const changed = {};
+export const diff = (
+  before: Record<string, ScreenshotResult>,
+  after: Record<string, ScreenshotResult>
+): Record<string, DiffEntry> => {
+  const changed: Record<string, DiffEntry> = {};
 
   for (const [name, afterPaths] of Object.entries(after)) {
     const beforePaths = before[name];
@@ -86,5 +92,3 @@ const diff = (before, after) => {
 
   return changed;
 };
-
-module.exports = { diff };
