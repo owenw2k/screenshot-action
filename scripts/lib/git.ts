@@ -23,12 +23,16 @@ const refExists = (ref: string): boolean => {
 /**
  * Creates a detached git worktree at a temporary path for the given ref.
  * Returns null if the ref does not exist, so callers can skip gracefully.
+ * Falls back to `origin/${ref}` to handle shallow clones where the local
+ * branch ref is absent but the remote tracking ref is present.
  *
  * @param ref - Branch or commit to check out.
  * @returns Absolute path to the worktree, or null if the ref was not found.
  */
 export const addWorktree = (ref: string): string | null => {
-  if (!refExists(ref)) {
+  const resolvedRef = refExists(ref) ? ref : refExists(`origin/${ref}`) ? `origin/${ref}` : null;
+
+  if (!resolvedRef) {
     console.log(`[git] ref "${ref}" not found — skipping before screenshots`);
     return null;
   }
@@ -37,8 +41,8 @@ export const addWorktree = (ref: string): string | null => {
     execSync(`git worktree remove "${WORKTREE_PATH}" --force`, { stdio: "inherit" });
   }
 
-  execSync(`git worktree add --detach "${WORKTREE_PATH}" "${ref}"`, { stdio: "inherit" });
-  console.log(`[git] worktree created at ${WORKTREE_PATH} (${ref})`);
+  execSync(`git worktree add --detach "${WORKTREE_PATH}" "${resolvedRef}"`, { stdio: "inherit" });
+  console.log(`[git] worktree created at ${WORKTREE_PATH} (${resolvedRef})`);
   return WORKTREE_PATH;
 };
 
