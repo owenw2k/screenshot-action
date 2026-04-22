@@ -60,7 +60,16 @@ jobs:
       pull-requests: write
 ```
 
-The action handles all its own dependencies (Playwright, Pillow). No additional setup needed.
+The action handles all its own dependencies (Playwright, Pillow) for screenshot capture. No additional setup needed for the action itself.
+
+> **If your repo runs Playwright e2e tests**, you must still install the Node Playwright browsers separately — the action installs its own Python Playwright build which is a different executable:
+>
+> ```yaml
+> - name: Install Playwright browsers
+>   run: pnpm exec playwright install --with-deps chromium
+> ```
+>
+> Place this step before the action in your workflow. If you skip it, your e2e tests will fail with "Executable doesn't exist".
 
 ## Inputs
 

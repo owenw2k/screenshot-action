@@ -48,6 +48,40 @@ def check_dependencies() -> None:
         sys.exit(1)
 
 
+def launch_browser(p: object) -> object:
+    """
+    Launch a Chromium browser instance with a clear error if the executable is missing.
+
+    The action installs Chromium via 'python -m playwright install chromium'.
+    If you see this error, that install step likely failed — check the action logs.
+
+    @param p - Playwright instance from sync_playwright()
+    @returns Launched browser instance
+    @throws SystemExit if the Chromium executable is not found
+    """
+    try:
+        return p.chromium.launch()
+    except Exception as e:
+        if "Executable doesn't exist" in str(e) or "executable doesn't exist" in str(e):
+            print(
+                "\nERROR: Chromium executable not found.\n"
+                "\n"
+                "The action installs Chromium automatically. If you see this error:\n"
+                "  - Check that the 'Install Playwright browser' action step succeeded\n"
+                "  - If running locally, run: python -m playwright install chromium\n"
+                "\n"
+                "Note: this action installs its own Chromium for screenshot capture.\n"
+                "If your repo also runs Playwright e2e tests, you must install the\n"
+                "Node Playwright browsers separately in your CI:\n"
+                "\n"
+                "  - name: Install Playwright browsers\n"
+                "    run: pnpm exec playwright install --with-deps chromium\n",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        raise
+
+
 def main() -> None:
     """
     Capture light and dark screenshots of every [data-screenshot] section.
@@ -65,7 +99,7 @@ def main() -> None:
 
     with sync_playwright() as p:
         for scheme in ("light", "dark"):
-            browser = p.chromium.launch()
+            browser = launch_browser(p)
             context = browser.new_context(
                 viewport={"width": 1280, "height": 800},
                 color_scheme=scheme,
