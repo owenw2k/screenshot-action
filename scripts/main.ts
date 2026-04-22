@@ -4,21 +4,13 @@
  * On pull_request events: captures "after" screenshots from the already-running
  * server, checks out base-ref in a worktree to capture "before" screenshots,
  * diffs them, and injects a before/after table into the PR description.
- *
- * Requires these environment variables (set by action.yml):
- *   GITHUB_TOKEN, REPO, EVENT_NAME, PR_NUMBER,
- *   BASE_URL, BASE_REF, BASE_PORT,
- *   INSTALL_COMMAND, BUILD_COMMAND, SERVE_COMMAND,
- *   DARK_MODE_LABEL
  */
 
-"use strict";
-
-const { capture } = require("./capture");
-const { diff } = require("./diff");
-const { uploadAndInject } = require("./upload");
-const { addWorktree, removeWorktree } = require("./lib/git");
-const { startBaseServer, stopServer } = require("./lib/server");
+import { capture } from "./capture";
+import { diff } from "./diff";
+import { uploadAndInject } from "./upload";
+import { addWorktree, removeWorktree } from "./lib/git";
+import { startBaseServer, stopServer } from "./lib/server";
 
 const {
   GITHUB_TOKEN,
@@ -36,10 +28,8 @@ const {
 
 /**
  * Entry point.
- *
- * @returns {Promise<void>}
  */
-const main = async () => {
+const main = async (): Promise<void> => {
   if (EVENT_NAME !== "pull_request") {
     console.log(`[main] event is "${EVENT_NAME}" — nothing to do`);
     return;
@@ -63,7 +53,7 @@ const main = async () => {
   }
 
   // --- Capture "before" (base-ref in a worktree) ---
-  let beforeScreenshots = {};
+  let beforeScreenshots: Record<string, { light: string; dark?: string }> = {};
   let baseProc = null;
   const worktreePath = addWorktree(BASE_REF);
 
@@ -87,7 +77,9 @@ const main = async () => {
         darkModeLabel: DARK_MODE_LABEL || undefined,
       });
     } catch (err) {
-      console.warn(`[main] could not capture before screenshots: ${err.message}`);
+      console.warn(
+        `[main] could not capture before screenshots: ${(err as Error).message}`
+      );
       console.warn("[main] all sections will be marked as (new)");
       beforeScreenshots = {};
     } finally {
@@ -114,6 +106,6 @@ const main = async () => {
 };
 
 main().catch((err) => {
-  console.error("[main] fatal:", err.message);
+  console.error("[main] fatal:", (err as Error).message);
   process.exit(1);
 });

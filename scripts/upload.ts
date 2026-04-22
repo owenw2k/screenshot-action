@@ -4,31 +4,49 @@
  *
  * Images are hosted permanently on GitHub's CDN via the issues asset API —
  * no branch storage needed.
- *
- * @module upload
  */
 
-"use strict";
-
-const fs = require("fs");
-const https = require("https");
-const path = require("path");
+import fs from "fs";
+import https from "https";
+import path from "path";
 
 /** Markers used to find and replace the screenshots block in PR descriptions. */
 const MARKER_START = "<!-- screenshots-start -->";
 const MARKER_END = "<!-- screenshots-end -->";
 
+interface DiffEntry {
+  isNew: boolean;
+  before?: { light: string; dark?: string };
+  after: { light: string; dark?: string };
+}
+
+interface UploadOpts {
+  filePath: string;
+  repo: string;
+  prNumber: string;
+  token: string;
+}
+
+interface PrOpts {
+  repo: string;
+  prNumber: string;
+  token: string;
+}
+
+interface InjectOpts {
+  diffs: Record<string, DiffEntry>;
+  prNumber: string;
+  repo: string;
+  token: string;
+}
+
 /**
  * Uploads a single PNG file to GitHub's user-attachments API.
  *
- * @param {object} opts
- * @param {string} opts.filePath - Path to the PNG to upload.
- * @param {string} opts.repo - Repository in `owner/name` format.
- * @param {string} opts.prNumber - PR number (used as the issue number for the asset API).
- * @param {string} opts.token - GitHub token.
- * @returns {Promise<string>} Permanent CDN URL of the uploaded image.
+ * @param opts - Upload options including file path, repo, PR number, and token.
+ * @returns Permanent CDN URL of the uploaded image.
  */
-const uploadImage = ({ filePath, repo, prNumber, token }) =>
+const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> =>
   new Promise((resolve, reject) => {
     const data = fs.readFileSync(filePath);
     const filename = encodeURIComponent(path.basename(filePath));
@@ -70,13 +88,10 @@ const uploadImage = ({ filePath, repo, prNumber, token }) =>
 /**
  * Fetches the current PR body via the GitHub REST API.
  *
- * @param {object} opts
- * @param {string} opts.repo - Repository in `owner/name` format.
- * @param {string} opts.prNumber - PR number.
- * @param {string} opts.token - GitHub token.
- * @returns {Promise<string>} Current PR body text.
+ * @param opts - PR options including repo, PR number, and token.
+ * @returns Current PR body text.
  */
-const getPrBody = ({ repo, prNumber, token }) =>
+const getPrBody = ({ repo, prNumber, token }: PrOpts): Promise<string> =>
   new Promise((resolve, reject) => {
     const [owner, repoName] = repo.split("/");
     const options = {
@@ -108,14 +123,10 @@ const getPrBody = ({ repo, prNumber, token }) =>
 /**
  * Updates the PR body via the GitHub REST API.
  *
- * @param {object} opts
- * @param {string} opts.repo - Repository in `owner/name` format.
- * @param {string} opts.prNumber - PR number.
- * @param {string} opts.token - GitHub token.
- * @param {string} opts.body - New PR body text.
- * @returns {Promise<void>}
+ * @param opts - PR options including repo, PR number, token, and new body.
+ * @returns Promise that resolves when the update completes.
  */
-const updatePrBody = ({ repo, prNumber, token, body }) =>
+const updatePrBody = ({ repo, prNumber, token, body }: PrOpts & { body: string }): Promise<void> =>
   new Promise((resolve, reject) => {
     const [owner, repoName] = repo.split("/");
     const payload = JSON.stringify({ body });
@@ -151,12 +162,16 @@ const updatePrBody = ({ repo, prNumber, token, body }) =>
 /**
  * Builds the markdown screenshot table for a single section.
  *
- * @param {string} name - Section name from the data-screenshot attribute.
- * @param {object} entry - Diff entry with isNew, before, and after paths.
- * @param {object} urls - Uploaded image URLs keyed by file path.
- * @returns {string} Markdown fragment for this section.
+ * @param name - Section name from the data-screenshot attribute.
+ * @param entry - Diff entry with isNew, before, and after paths.
+ * @param urls - Uploaded image URLs keyed by file path.
+ * @returns Markdown fragment for this section.
  */
-const buildSectionMarkdown = (name, entry, urls) => {
+const buildSectionMarkdown = (
+  name: string,
+  entry: DiffEntry,
+  urls: Record<string, string>
+): string => {
   const heading = `### ${name}`;
 
   if (entry.isNew) {
@@ -170,10 +185,10 @@ const buildSectionMarkdown = (name, entry, urls) => {
     return `${heading}\n\n${rows}`;
   }
 
-  const beforeLight = urls[entry.before.light];
+  const beforeLight = urls[entry.before!.light];
   const afterLight = urls[entry.after.light];
 
-  if (entry.before.dark && entry.after.dark) {
+  if (entry.before?.dark && entry.after.dark) {
     const beforeDark = urls[entry.before.dark];
     const afterDark = urls[entry.after.dark];
     return (
@@ -195,11 +210,11 @@ const buildSectionMarkdown = (name, entry, urls) => {
  * Injects the screenshot table into the PR description, replacing any
  * existing content between the screenshot markers.
  *
- * @param {string} currentBody - Current PR body text.
- * @param {string} screenshotMarkdown - Markdown to inject.
- * @returns {string} Updated PR body.
+ * @param currentBody - Current PR body text.
+ * @param screenshotMarkdown - Markdown to inject.
+ * @returns Updated PR body.
  */
-const injectIntoBody = (currentBody, screenshotMarkdown) => {
+const injectIntoBody = (currentBody: string, screenshotMarkdown: string): string => {
   const block = `${MARKER_START}\n${screenshotMarkdown}\n${MARKER_END}`;
 
   if (currentBody.includes(MARKER_START) && currentBody.includes(MARKER_END)) {
@@ -215,21 +230,21 @@ const injectIntoBody = (currentBody, screenshotMarkdown) => {
  * Uploads all changed screenshots, builds a markdown table, and injects it
  * into the PR description.
  *
- * @param {object} opts
- * @param {Record<string, object>} opts.diffs - Output from diff.js.
- * @param {string} opts.prNumber - PR number.
- * @param {string} opts.repo - Repository in `owner/name` format.
- * @param {string} opts.token - GitHub token.
- * @returns {Promise<void>}
+ * @param opts - Upload and inject options including diffs, PR number, repo, and token.
  */
-const uploadAndInject = async ({ diffs, prNumber, repo, token }) => {
+export const uploadAndInject = async ({
+  diffs,
+  prNumber,
+  repo,
+  token,
+}: InjectOpts): Promise<void> => {
   if (Object.keys(diffs).length === 0) {
     console.log("[upload] no changed sections — PR description unchanged");
     return;
   }
 
   // Collect all file paths that need to be uploaded
-  const filePaths = new Set();
+  const filePaths = new Set<string>();
   for (const entry of Object.values(diffs)) {
     filePaths.add(entry.after.light);
     if (entry.after.dark) {
@@ -244,7 +259,7 @@ const uploadAndInject = async ({ diffs, prNumber, repo, token }) => {
   }
 
   console.log(`[upload] uploading ${filePaths.size} image(s) to GitHub`);
-  const urls = {};
+  const urls: Record<string, string> = {};
   for (const filePath of filePaths) {
     const url = await uploadImage({ filePath, repo, prNumber, token });
     urls[filePath] = url;
@@ -262,5 +277,3 @@ const uploadAndInject = async ({ diffs, prNumber, repo, token }) => {
   await updatePrBody({ repo, prNumber, token, body: newBody });
   console.log("[upload] PR description updated");
 };
-
-module.exports = { uploadAndInject };
