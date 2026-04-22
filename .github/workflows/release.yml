@@ -2,17 +2,38 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - main
 
 permissions:
   contents: write
+  issues: write
+  pull-requests: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
+      - uses: actions/checkout@v4
         with:
-          generate_release_notes: true
+          fetch-depth: 0
+
+      - name: Release
+        id: semantic
+        uses: cycjimmy/semantic-release-action@v4
+        with:
+          extra_plugins: |
+            @semantic-release/changelog
+            @semantic-release/git
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update floating major version tag
+        if: steps.semantic.outputs.new_release_published == 'true'
+        run: |
+          TAG="v${{ steps.semantic.outputs.new_release_version }}"
+          MAJOR=$(echo "$TAG" | cut -d. -f1)
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$MAJOR"
+          git push origin "$MAJOR" --force
