@@ -7,7 +7,6 @@
  */
 
 import fs from "fs";
-import https from "https";
 import path from "path";
 
 /** Markers used to find and replace the screenshots block in PR descriptions. */
@@ -41,57 +40,41 @@ interface InjectOpts {
 }
 
 /**
- * Uploads a single PNG file to GitHub's user-attachments API.
- * The API requires multipart/form-data encoding.
+ * Uploads a single PNG file to GitHub's user-attachments API using native
+ * fetch + FormData so multipart encoding is handled correctly by the runtime.
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
  */
-const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const fileData = fs.readFileSync(filePath);
-    const filename = path.basename(filePath);
-    const boundary = `----FormBoundary${Math.random().toString(36).slice(2)}`;
+const uploadImage = async ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> => {
+  const [owner, repoName] = repo.split("/");
+  const filename = path.basename(filePath);
+  const fileData = fs.readFileSync(filePath);
 
-    const head = Buffer.from(
-      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`
-    );
-    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-    const body = Buffer.concat([head, fileData, tail]);
+  const form = new FormData();
+  form.append("file", new Blob([fileData], { type: "image/png" }), filename);
 
-    const [owner, repoName] = repo.split("/");
-    const options = {
-      hostname: "uploads.github.com",
-      path: `/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
+  const res = await fetch(
+    `https://uploads.github.com/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
+    {
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "Content-Length": body.length,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
-    };
+      body: form,
+    }
+  );
 
-    const req = https.request(options, (res) => {
-      let responseBody = "";
-      res.on("data", (chunk) => {
-        responseBody += chunk;
-      });
-      res.on("end", () => {
-        if (res.statusCode !== 201) {
-          reject(new Error(`Upload failed (${res.statusCode}): ${responseBody}`));
-          return;
-        }
-        const { url } = JSON.parse(responseBody);
-        resolve(url);
-      });
-    });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Upload failed (${res.status}): ${body}`);
+  }
 
-    req.on("error", reject);
-    req.write(body);
-    req.end();
-  });
+  const { url } = (await res.json()) as { url: string };
+  return url;
+};
 
 /**
  * Fetches the current PR body via the GitHub REST API.
@@ -99,73 +82,53 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
  * @param opts - PR options including repo, PR number, and token.
  * @returns Current PR body text.
  */
-const getPrBody = ({ repo, prNumber, token }: PrOpts): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const [owner, repoName] = repo.split("/");
-    const options = {
-      hostname: "api.github.com",
-      path: `/repos/${owner}/${repoName}/pulls/${prNumber}`,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "screenshot-action",
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    };
-
-    https.get(options, (res) => {
-      let body = "";
-      res.on("data", (chunk) => {
-        body += chunk;
-      });
-      res.on("end", () => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`Failed to fetch PR (${res.statusCode}): ${body}`));
-          return;
-        }
-        resolve(JSON.parse(body).body ?? "");
-      });
-    });
+const getPrBody = async ({ repo, prNumber, token }: PrOpts): Promise<string> => {
+  const [owner, repoName] = repo.split("/");
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repoName}/pulls/${prNumber}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "screenshot-action",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
   });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch PR (${res.status})`);
+  }
+
+  const data = (await res.json()) as { body: string | null };
+  return data.body ?? "";
+};
 
 /**
  * Updates the PR body via the GitHub REST API.
  *
  * @param opts - PR options including repo, PR number, token, and new body.
- * @returns Promise that resolves when the update completes.
  */
-const updatePrBody = ({ repo, prNumber, token, body }: PrOpts & { body: string }): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const [owner, repoName] = repo.split("/");
-    const payload = JSON.stringify({ body });
-
-    const options = {
-      hostname: "api.github.com",
-      path: `/repos/${owner}/${repoName}/pulls/${prNumber}`,
-      method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "User-Agent": "screenshot-action",
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    };
-
-    const req = https.request(options, (res) => {
-      res.resume();
-      if (res.statusCode !== 200) {
-        reject(new Error(`Failed to update PR body (${res.statusCode})`));
-        return;
-      }
-      resolve();
-    });
-
-    req.on("error", reject);
-    req.write(payload);
-    req.end();
+const updatePrBody = async ({
+  repo,
+  prNumber,
+  token,
+  body,
+}: PrOpts & { body: string }): Promise<void> => {
+  const [owner, repoName] = repo.split("/");
+  const res = await fetch(`https://api.github.com/repos/${owner}/${repoName}/pulls/${prNumber}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "screenshot-action",
+      "Content-Type": "application/json",
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: JSON.stringify({ body }),
   });
+
+  if (!res.ok) {
+    throw new Error(`Failed to update PR body (${res.status})`);
+  }
+};
 
 /**
  * Builds the markdown screenshot table for a single section.
