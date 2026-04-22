@@ -91,7 +91,7 @@ def images_differ(current: Path, baseline_bytes: bytes) -> bool:
     total = img_current.width * img_current.height
     changed = sum(
         1
-        for r, g, b in diff.getdata()
+        for r, g, b in diff.get_flattened_data()
         if r > _TOLERANCE or g > _TOLERANCE or b > _TOLERANCE
     )
     return (changed / total) > _THRESHOLD
