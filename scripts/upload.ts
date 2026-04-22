@@ -42,46 +42,54 @@ interface InjectOpts {
 
 /**
  * Uploads a single PNG file to GitHub's user-attachments API.
+ * The API requires multipart/form-data encoding.
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
  */
 const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> =>
   new Promise((resolve, reject) => {
-    const data = fs.readFileSync(filePath);
-    const filename = encodeURIComponent(path.basename(filePath));
-    const [owner, repoName] = repo.split("/");
+    const fileData = fs.readFileSync(filePath);
+    const filename = path.basename(filePath);
+    const boundary = `----FormBoundary${Math.random().toString(36).slice(2)}`;
 
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: image/png\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([head, fileData, tail]);
+
+    const [owner, repoName] = repo.split("/");
     const options = {
       hostname: "uploads.github.com",
-      path: `/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${filename}`,
+      path: `/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
       method: "POST",
       headers: {
         Authorization: `Bearer ${token}`,
-        "Content-Type": "image/png",
-        "Content-Length": data.length,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "Content-Length": body.length,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
       },
     };
 
     const req = https.request(options, (res) => {
-      let body = "";
+      let responseBody = "";
       res.on("data", (chunk) => {
-        body += chunk;
+        responseBody += chunk;
       });
       res.on("end", () => {
         if (res.statusCode !== 201) {
-          reject(new Error(`Upload failed (${res.statusCode}): ${body}`));
+          reject(new Error(`Upload failed (${res.statusCode}): ${responseBody}`));
           return;
         }
-        const { url } = JSON.parse(body);
+        const { url } = JSON.parse(responseBody);
         resolve(url);
       });
     });
 
     req.on("error", reject);
-    req.write(data);
+    req.write(body);
     req.end();
   });
 
