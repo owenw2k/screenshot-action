@@ -1,0 +1,66 @@
+name: PR Screenshots
+description: >
+  Capture element-level screenshots of data-screenshot sections, diff them
+  against main-branch baselines, and inject before/after tables into the PR
+  description. On pushes to main, stores updated baselines for future diffs.
+
+inputs:
+  github-token:
+    description: GitHub token with contents:write and pull-requests:write permissions.
+    required: true
+  pr-number:
+    description: Pull request number. Required when running on a pull_request event.
+    required: false
+    default: ""
+  base-url:
+    description: URL of the running dev/preview server to screenshot.
+    required: false
+    default: "http://localhost:3000"
+
+runs:
+  using: composite
+  steps:
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install -r "${{ github.action_path }}/requirements.txt" --quiet
+
+    - name: Install Playwright browser
+      shell: bash
+      run: python -m playwright install chromium --with-deps
+
+    - name: Capture screenshots
+      shell: bash
+      env:
+        BASE_URL: ${{ inputs.base-url }}
+      run: python "${{ github.action_path }}/scripts/capture-screenshots.py"
+
+    - name: Store screenshot baselines
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+      run: python "${{ github.action_path }}/scripts/store-baselines.py"
+
+    - name: Diff screenshots against baseline
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+      run: python "${{ github.action_path }}/scripts/diff-screenshots.py"
+
+    - name: Inject screenshots into PR description
+      if: github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR_NUMBER: ${{ inputs.pr-number }}
+        REPO: ${{ github.repository }}
+        SCREENSHOT_DIR: pr-screenshots-changed
+      run: |
+        SCREENSHOT_MD=$(python "${{ github.action_path }}/scripts/upload-screenshots.py")
+        current_body=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
+        new_body=$(BODY="$current_body" SCREENSHOTS="$SCREENSHOT_MD" python "${{ github.action_path }}/scripts/inject-screenshots.py")
+        gh pr edit "$PR_NUMBER" --body "$new_body"
