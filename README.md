@@ -82,21 +82,23 @@ jobs:
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
 | `github-token` | yes | | Token with `pull-requests:write` |
-| `pr-number` | no | `""` | PR number — required on `pull_request` events |
+| `pr-number` | no | `""` | PR number — pass `${{ github.event.pull_request.number }}` |
 | `base-url` | no | `http://localhost:3000` | URL of the already-running "after" server |
 | `base-ref` | no | `main` | Branch or ref to capture "before" screenshots from |
 | `install-command` | no | `npm ci` | Dependency install command for the base-ref worktree |
 | `build-command` | no | `npm run build` | Build command for the base-ref worktree |
 | `serve-command` | no | `npm start` | Server start command for the base-ref worktree |
-| `dark-mode-toggle-label` | no | `""` | Accessible label of the dark-mode toggle button. Omit to capture light mode only. |
+| `dark-mode-toggle-label` | no | `""` | Accessible label of the dark-mode toggle. Omit to capture light mode only. |
 
 ## Optional inputs explained
 
-These inputs are optional but recommended for non-default setups:
+- **`pr-number`** — Pass `${{ github.event.pull_request.number }}`. The action skips everything silently on non-`pull_request` events, so it is safe to include this step unconditionally in a job that runs on both push and PR triggers.
 
-- **`base-ref`** — The ref to compare against. Defaults to `main`. If the ref does not exist, the action skips "before" screenshots gracefully and marks all sections as new.
+- **`base-url`** — Only override if your dev server runs on a port other than 3000, or if the action runs on a different host. The default `http://localhost:3000` works for most Next.js and Vite setups.
 
-- **`install-command`**, **`build-command`**, **`serve-command`** — Used to build and run the base-ref in a git worktree. Defaults assume an npm-based project. For pnpm or yarn, override all three:
+- **`base-ref`** — The ref to compare against. Defaults to `main`. If the ref does not exist (e.g. the very first PR in a repo), the action skips "before" screenshots gracefully and marks all sections as new.
+
+- **`install-command`**, **`build-command`**, **`serve-command`** — Used to build and serve the base-ref in a temporary git worktree so "before" screenshots can be captured. Defaults assume npm. For pnpm or yarn, override all three:
   ```yaml
   with:
     install-command: pnpm install --frozen-lockfile
@@ -104,18 +106,17 @@ These inputs are optional but recommended for non-default setups:
     serve-command: pnpm start
   ```
 
-- **`dark-mode-toggle-label`** — If your site has a dark mode toggle, pass the accessible label (or a substring). The action will capture both light and dark variants. Omit this input to capture light mode only.
+- **`dark-mode-toggle-label`** — If your site has a dark mode toggle, pass the accessible label (or a substring, case-insensitive). The action clicks the button matching that label and captures dark-mode variants for every section. Omit to capture light mode only.
 
-The dark-mode toggle must be reachable via `getByRole("button", { name: /label/i })`. For example, if your toggle has `aria-label="Toggle dark mode"`, pass `"toggle dark mode"` or just `"dark mode"`.
+  The toggle must be reachable via `getByRole("button", { name: /label/i })`. For example, if your toggle has `aria-label="Switch to dark mode"`, pass `"switch to dark mode"` or just `"dark mode"`.
+
+## Versioning
+
+Use `@v2` to always get the latest v2.x release. Use `@v2.0` or `@v2.1` to pin to a specific version. The floating `v2` tag is force-updated on every release.
 
 ## How sections are captured
 
-Screenshots are captured at 1280x800. When `dark-mode-toggle-label` is set, the
-action clicks the button matching that label and captures a second dark-mode
-variant for each section.
-
-The dark-mode toggle button must be reachable via `getByRole("button", { name })`.
-Ensure your toggle has an accessible label that matches the value you pass in.
+Screenshots are captured at 1280x800. Each `[data-screenshot]` element on every page reachable from `base-url` is captured individually — element-level, not full-page — so the diff only shows what actually changed.
 
 ## How images are hosted
 
