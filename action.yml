@@ -1,66 +1,70 @@
 name: PR Screenshots
 description: >
   Capture element-level screenshots of data-screenshot sections, diff them
-  against main-branch baselines, and inject before/after tables into the PR
-  description. On pushes to main, stores updated baselines for future diffs.
+  against base-ref baselines, and inject before/after tables into the PR
+  description. Stateless — no branch storage needed.
 
 inputs:
   github-token:
-    description: GitHub token with contents:write and pull-requests:write permissions.
+    description: GitHub token with pull-requests:write permissions.
     required: true
   pr-number:
-    description: Pull request number. Required when running on a pull_request event.
+    description: Pull request number. Required on pull_request events.
     required: false
     default: ""
   base-url:
-    description: URL of the running dev/preview server to screenshot.
+    description: URL of the already-running server to screenshot.
     required: false
     default: "http://localhost:3000"
+  base-ref:
+    description: >
+      Branch or ref to check out for before screenshots.
+      Skipped gracefully if the ref does not exist.
+    required: false
+    default: "main"
+  install-command:
+    description: Command to install dependencies in the base-ref worktree.
+    required: false
+    default: "npm ci"
+  build-command:
+    description: Command to build the app in the base-ref worktree.
+    required: false
+    default: "npm run build"
+  serve-command:
+    description: Command to start the server in the base-ref worktree.
+    required: false
+    default: "npm start"
+  dark-mode-toggle-label:
+    description: >
+      Accessible label (or substring) of the dark-mode toggle button.
+      When provided, screenshots are captured in both light and dark mode.
+      Omit to capture light mode only.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
-    - name: Install Python dependencies
+    - name: Install action dependencies
       shell: bash
-      run: pip install -r "${{ github.action_path }}/requirements.txt" --quiet
+      run: cd "${{ github.action_path }}" && npm install --omit=dev
 
     - name: Install Playwright browser
       shell: bash
-      run: python -m playwright install chromium --with-deps
+      run: cd "${{ github.action_path }}" && node_modules/.bin/playwright install chromium --with-deps
 
-    - name: Capture screenshots
-      shell: bash
-      env:
-        BASE_URL: ${{ inputs.base-url }}
-      run: python "${{ github.action_path }}/scripts/capture-screenshots.py"
-
-    - name: Store screenshot baselines
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    - name: Run screenshot pipeline
       shell: bash
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
-        REPO: ${{ github.repository }}
-      run: python "${{ github.action_path }}/scripts/store-baselines.py"
-
-    - name: Diff screenshots against baseline
-      if: github.event_name == 'pull_request'
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        REPO: ${{ github.repository }}
-      run: python "${{ github.action_path }}/scripts/diff-screenshots.py"
-
-    - name: Inject screenshots into PR description
-      if: github.event_name == 'pull_request'
-      shell: bash
-      env:
-        GITHUB_TOKEN: ${{ inputs.github-token }}
-        GH_TOKEN: ${{ inputs.github-token }}
         PR_NUMBER: ${{ inputs.pr-number }}
+        BASE_URL: ${{ inputs.base-url }}
+        BASE_REF: ${{ inputs.base-ref }}
+        BASE_PORT: "3001"
+        INSTALL_COMMAND: ${{ inputs.install-command }}
+        BUILD_COMMAND: ${{ inputs.build-command }}
+        SERVE_COMMAND: ${{ inputs.serve-command }}
+        DARK_MODE_LABEL: ${{ inputs.dark-mode-toggle-label }}
         REPO: ${{ github.repository }}
-        SCREENSHOT_DIR: pr-screenshots-changed
-      run: |
-        SCREENSHOT_MD=$(python "${{ github.action_path }}/scripts/upload-screenshots.py")
-        current_body=$(gh pr view "$PR_NUMBER" --json body --jq '.body')
-        new_body=$(BODY="$current_body" SCREENSHOTS="$SCREENSHOT_MD" python "${{ github.action_path }}/scripts/inject-screenshots.py")
-        gh pr edit "$PR_NUMBER" --body "$new_body"
+        EVENT_NAME: ${{ github.event_name }}
+      run: node "${{ github.action_path }}/scripts/main.js"
