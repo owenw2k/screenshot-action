@@ -23,19 +23,27 @@ const refExists = (ref: string): boolean => {
 /**
  * Creates a detached git worktree at a temporary path for the given ref.
  * Returns null if the ref does not exist, so callers can skip gracefully.
- * Falls back to `origin/${ref}` to handle shallow clones where the local
- * branch ref is absent but the remote tracking ref is present.
+ * In shallow clones (fetch-depth: 1), neither the local branch nor the
+ * remote tracking ref exists, so we explicitly fetch the ref first.
  *
  * @param ref - Branch or commit to check out.
  * @returns Absolute path to the worktree, or null if the ref was not found.
  */
 export const addWorktree = (ref: string): string | null => {
-  const resolvedRef = refExists(ref) ? ref : refExists(`origin/${ref}`) ? `origin/${ref}` : null;
+  if (!refExists(ref)) {
+    try {
+      execSync(`git fetch origin "${ref}" --depth=1`, { stdio: "pipe" });
+    } catch {
+      // ref doesn't exist on remote — fall through to null
+    }
+  }
 
-  if (!resolvedRef) {
+  if (!refExists(ref) && !refExists(`origin/${ref}`)) {
     console.log(`[git] ref "${ref}" not found — skipping before screenshots`);
     return null;
   }
+
+  const resolvedRef = refExists(ref) ? ref : `origin/${ref}`;
 
   if (fs.existsSync(WORKTREE_PATH)) {
     execSync(`git worktree remove "${WORKTREE_PATH}" --force`, { stdio: "inherit" });
