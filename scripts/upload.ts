@@ -358,7 +358,7 @@ export const uploadAndInject = async ({
     .map(([name, entry]) => buildSectionMarkdown(name, entry, urls))
     .join("\n\n");
 
-  const screenshotMarkdown = `## Screenshots\n\n${sections}`;
+  const screenshotMarkdown = sections;
 
   const currentBody = await getPrBody({ repo, prNumber, token });
   const newBody = injectIntoBody(currentBody, screenshotMarkdown);
