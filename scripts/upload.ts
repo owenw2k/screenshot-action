@@ -314,7 +314,15 @@ export const uploadAndInject = async ({
   token,
 }: InjectOpts): Promise<void> => {
   if (Object.keys(diffs).length === 0) {
-    console.log("[upload] no changed sections — PR description unchanged");
+    console.log("[upload] no changed sections — removing any existing screenshots block");
+    const currentBody = await getPrBody({ repo, prNumber, token });
+    if (currentBody.includes(MARKER_START) && currentBody.includes(MARKER_END)) {
+      const startIdx = currentBody.indexOf(MARKER_START);
+      const endIdx = currentBody.indexOf(MARKER_END) + MARKER_END.length;
+      const newBody = currentBody.slice(0, startIdx) + currentBody.slice(endIdx).replace(/^\n/, "");
+      await updatePrBody({ repo, prNumber, token, body: newBody });
+      console.log("[upload] screenshots block removed");
+    }
     return;
   }
 
