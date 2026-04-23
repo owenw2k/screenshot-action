@@ -6,7 +6,9 @@ description: >
 
 inputs:
   github-token:
-    description: GitHub token with pull-requests:write permissions.
+    description: >
+      GitHub token with pull-requests:write and contents:write permissions.
+      contents:write is required to create the screenshots-cdn release and upload assets.
     required: true
   pr-number:
     description: Pull request number. Required on pull_request events.

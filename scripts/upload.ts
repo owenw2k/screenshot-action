@@ -1,9 +1,11 @@
 /**
- * Uploads PNG screenshots to the GitHub user-attachments API and injects
+ * Uploads PNG screenshots to a hidden GitHub release used as a CDN and injects
  * a before/after markdown table into the PR description.
  *
- * Images are hosted permanently on GitHub's CDN via the issues asset API —
- * no branch storage needed.
+ * Images are stored as release assets on a `screenshots-cdn` pre-release in the
+ * target repo. This avoids branch storage while using a documented, GITHUB_TOKEN-
+ * compatible upload endpoint (unlike the issues asset API which rejects programmatic
+ * uploads).
  */
 
 import fs from "fs";
@@ -14,6 +16,9 @@ import path from "path";
 const MARKER_START = "<!-- screenshots-start -->";
 const MARKER_END = "<!-- screenshots-end -->";
 
+/** Tag used for the hidden CDN release that stores screenshot assets. */
+const CDN_RELEASE_TAG = "screenshots-cdn";
+
 interface DiffEntry {
   isNew: boolean;
   before?: { light: string; dark?: string };
@@ -22,6 +27,7 @@ interface DiffEntry {
 
 interface UploadOpts {
   filePath: string;
+  releaseId: number;
   repo: string;
   prNumber: string;
   token: string;
@@ -41,101 +47,183 @@ interface InjectOpts {
 }
 
 /**
- * Uploads a single PNG file to GitHub's user-attachments API using a manually
- * constructed multipart/form-data body.
+ * Makes an authenticated request to the GitHub REST API.
  *
- * The entire body is built as a single Buffer before the request is made, so
- * Content-Length is guaranteed to equal the actual bytes sent.
- *
- * @param opts - Upload options including file path, repo, PR number, and token.
- * @returns Permanent CDN URL of the uploaded image.
- * @throws {Error} If the upload fails or the response cannot be parsed.
+ * @param method - HTTP method (GET, POST, DELETE, PATCH)
+ * @param path - API path starting with `/repos/...`
+ * @param token - GitHub token for Authorization header
+ * @param body - Optional JSON body for POST/PATCH requests
+ * @returns Parsed JSON response body
+ * @throws {Error} If the response status is not 2xx
  */
-const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> => {
-  const [owner, repoName] = repo.split("/");
-  const filename = path.basename(filePath);
-  const fileData = fs.readFileSync(filePath);
+const ghApi = async (
+  method: string,
+  apiPath: string,
+  token: string,
+  body?: unknown
+): Promise<unknown> => {
+  const res = await fetch(`https://api.github.com${apiPath}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "User-Agent": "screenshot-action",
+      ...(body ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
 
-  const boundary = `----ScreenshotActionBoundary${Date.now().toString(16)}`;
-  const head = Buffer.from(
-    `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
-      `Content-Type: image/png\r\n` +
-      `\r\n`,
-    "utf8"
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
-  const body = Buffer.concat([head, fileData, tail]);
+  if (!res.ok && res.status !== 404) {
+    const text = await res.text();
+    throw new Error(`GitHub API ${method} ${apiPath} failed (${res.status}): ${text}`);
+  }
 
-  console.log(`[upload] ${filename}: file=${fileData.length}B body=${body.length}B`);
+  if (res.status === 204 || res.status === 404) {
+    return null;
+  }
 
-  return new Promise((resolve, reject) => {
+  return res.json();
+};
+
+/**
+ * Finds the `screenshots-cdn` pre-release in the repo, creating it if it does not exist.
+ *
+ * The release is created as a pre-release so it does not appear as the latest release
+ * in the repo's releases page and does not trigger release notifications.
+ *
+ * @param repo - GitHub repository in `owner/repo` format
+ * @param token - GitHub token
+ * @returns The numeric release ID
+ * @throws {Error} If the release cannot be found or created
+ */
+const getOrCreateCdnRelease = async (repo: string, token: string): Promise<number> => {
+  const existing = (await ghApi("GET", `/repos/${repo}/releases/tags/${CDN_RELEASE_TAG}`, token)) as
+    | { id: number }
+    | null;
+
+  if (existing?.id) {
+    console.log(`[upload] using existing CDN release id=${existing.id}`);
+    return existing.id;
+  }
+
+  console.log(`[upload] creating ${CDN_RELEASE_TAG} pre-release`);
+  const created = (await ghApi("POST", `/repos/${repo}/releases`, token, {
+    tag_name: CDN_RELEASE_TAG,
+    name: "Screenshot CDN",
+    body: "Internal release used to host PR screenshot assets. Do not delete.",
+    prerelease: true,
+    draft: false,
+  })) as { id: number };
+
+  console.log(`[upload] created CDN release id=${created.id}`);
+  return created.id;
+};
+
+/**
+ * Deletes an existing release asset by name if one exists, so re-runs overwrite cleanly.
+ *
+ * @param repo - GitHub repository in `owner/repo` format
+ * @param releaseId - Numeric ID of the release
+ * @param assetName - Asset filename to delete
+ * @param token - GitHub token
+ */
+const deleteExistingAsset = async (
+  repo: string,
+  releaseId: number,
+  assetName: string,
+  token: string
+): Promise<void> => {
+  const assets = (await ghApi(
+    "GET",
+    `/repos/${repo}/releases/${releaseId}/assets?per_page=100`,
+    token
+  )) as Array<{ id: number; name: string }> | null;
+
+  if (!assets) {
+    return;
+  }
+
+  const existing = assets.find((a) => a.name === assetName);
+  if (existing) {
+    console.log(`[upload] deleting existing asset ${assetName} (id=${existing.id})`);
+    await ghApi("DELETE", `/repos/${repo}/releases/assets/${existing.id}`, token);
+  }
+};
+
+/**
+ * Uploads a single PNG file to a GitHub release as a raw binary asset.
+ *
+ * Uses `https.request` directly so we can stream the raw Buffer with a guaranteed
+ * Content-Length header. The release asset endpoint requires raw binary (not multipart).
+ *
+ * @param opts - Upload options including file path, release ID, repo, PR number, and token
+ * @returns Permanent `browser_download_url` for the uploaded asset
+ * @throws {Error} If the upload fails or the response cannot be parsed
+ */
+const uploadImage = ({ filePath, releaseId, repo, prNumber, token }: UploadOpts): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const filename = path.basename(filePath);
+    const assetName = `pr${prNumber}-${filename}`;
+    const fileData = fs.readFileSync(filePath);
+
+    console.log(`[upload] ${assetName}: ${fileData.length}B`);
+
     const req = https.request(
       {
         hostname: "uploads.github.com",
-        path: `/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
+        path: `/repos/${repo}/releases/${releaseId}/assets?name=${encodeURIComponent(assetName)}`,
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "screenshot-action",
-          "Content-Type": `multipart/form-data; boundary=${boundary}`,
-          "Content-Length": String(body.length),
+          "Content-Type": "image/png",
+          "Content-Length": String(fileData.length),
         },
       },
       (res) => {
-        let responseBody = "";
+        let body = "";
         res.on("data", (chunk: Buffer) => {
-          responseBody += chunk.toString();
+          body += chunk.toString();
         });
         res.on("end", () => {
-          console.log(`[upload] response ${res.statusCode}: ${responseBody.slice(0, 300)}`);
+          console.log(`[upload] response ${res.statusCode}: ${body.slice(0, 300)}`);
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            const { url } = JSON.parse(responseBody) as { url: string };
-            resolve(url);
+            const { browser_download_url } = JSON.parse(body) as { browser_download_url: string };
+            resolve(browser_download_url);
           } else {
-            reject(new Error(`Upload failed (${res.statusCode}): ${responseBody}`));
+            reject(new Error(`Upload failed (${res.statusCode}): ${body}`));
           }
         });
       }
     );
 
     req.on("error", reject);
-    req.write(body);
+    req.write(fileData);
     req.end();
   });
-};
 
 /**
  * Fetches the current PR body via the GitHub REST API.
  *
- * @param opts - PR options including repo, PR number, and token.
- * @returns Current PR body text.
+ * @param opts - PR options including repo, PR number, and token
+ * @returns Current PR body text
+ * @throws {Error} If the API request fails
  */
 const getPrBody = async ({ repo, prNumber, token }: PrOpts): Promise<string> => {
-  const [owner, repoName] = repo.split("/");
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repoName}/pulls/${prNumber}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "User-Agent": "screenshot-action",
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch PR (${res.status})`);
-  }
-
-  const data = (await res.json()) as { body: string | null };
-  return data.body ?? "";
+  const data = (await ghApi("GET", `/repos/${repo}/pulls/${prNumber}`, token)) as {
+    body: string | null;
+  };
+  return data?.body ?? "";
 };
 
 /**
  * Updates the PR body via the GitHub REST API.
  *
- * @param opts - PR options including repo, PR number, token, and new body.
+ * @param opts - PR options including repo, PR number, token, and new body
+ * @throws {Error} If the API request fails
  */
 const updatePrBody = async ({
   repo,
@@ -143,31 +231,16 @@ const updatePrBody = async ({
   token,
   body,
 }: PrOpts & { body: string }): Promise<void> => {
-  const [owner, repoName] = repo.split("/");
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repoName}/pulls/${prNumber}`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "User-Agent": "screenshot-action",
-      "Content-Type": "application/json",
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-    body: JSON.stringify({ body }),
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to update PR body (${res.status})`);
-  }
+  await ghApi("PATCH", `/repos/${repo}/pulls/${prNumber}`, token, { body });
 };
 
 /**
  * Builds the markdown screenshot table for a single section.
  *
- * @param name - Section name from the data-screenshot attribute.
- * @param entry - Diff entry with isNew, before, and after paths.
- * @param urls - Uploaded image URLs keyed by file path.
- * @returns Markdown fragment for this section.
+ * @param name - Section name from the data-screenshot attribute
+ * @param entry - Diff entry with isNew, before, and after paths
+ * @param urls - Uploaded image URLs keyed by file path
+ * @returns Markdown fragment for this section
  */
 const buildSectionMarkdown = (
   name: string,
@@ -212,9 +285,9 @@ const buildSectionMarkdown = (
  * Injects the screenshot table into the PR description, replacing any
  * existing content between the screenshot markers.
  *
- * @param currentBody - Current PR body text.
- * @param screenshotMarkdown - Markdown to inject.
- * @returns Updated PR body.
+ * @param currentBody - Current PR body text
+ * @param screenshotMarkdown - Markdown to inject
+ * @returns Updated PR body
  */
 const injectIntoBody = (currentBody: string, screenshotMarkdown: string): string => {
   const block = `${MARKER_START}\n${screenshotMarkdown}\n${MARKER_END}`;
@@ -229,10 +302,10 @@ const injectIntoBody = (currentBody: string, screenshotMarkdown: string): string
 };
 
 /**
- * Uploads all changed screenshots, builds a markdown table, and injects it
- * into the PR description.
+ * Uploads all changed screenshots to the CDN release, builds a markdown table,
+ * and injects it into the PR description.
  *
- * @param opts - Upload and inject options including diffs, PR number, repo, and token.
+ * @param opts - Upload and inject options including diffs, PR number, repo, and token
  */
 export const uploadAndInject = async ({
   diffs,
@@ -244,6 +317,8 @@ export const uploadAndInject = async ({
     console.log("[upload] no changed sections — PR description unchanged");
     return;
   }
+
+  const releaseId = await getOrCreateCdnRelease(repo, token);
 
   // Collect all file paths that need to be uploaded
   const filePaths = new Set<string>();
@@ -260,12 +335,15 @@ export const uploadAndInject = async ({
     }
   }
 
-  console.log(`[upload] uploading ${filePaths.size} image(s) to GitHub`);
+  console.log(`[upload] uploading ${filePaths.size} image(s) to release id=${releaseId}`);
   const urls: Record<string, string> = {};
   for (const filePath of filePaths) {
-    const url = await uploadImage({ filePath, repo, prNumber, token });
+    const filename = path.basename(filePath);
+    const assetName = `pr${prNumber}-${filename}`;
+    await deleteExistingAsset(repo, releaseId, assetName, token);
+    const url = await uploadImage({ filePath, releaseId, repo, prNumber, token });
     urls[filePath] = url;
-    console.log(`[upload] ${path.basename(filePath)} → ${url}`);
+    console.log(`[upload] ${filename} → ${url}`);
   }
 
   const sections = Object.entries(diffs)
