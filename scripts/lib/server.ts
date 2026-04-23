@@ -74,8 +74,12 @@ export const startBaseServer = async ({
     cwd,
     env: { ...process.env, PORT: String(port) },
     shell: true,
+    // detached creates a new process group so process.kill(-pid) reaches all children
+    detached: true,
     stdio: "pipe",
   });
+  // unref so the parent Node process can exit without waiting for the server
+  proc.unref();
 
   await waitForServer(`http://localhost:${port}`, 60_000);
   console.log(`[server] base-ref server ready on port ${port}`);
@@ -89,7 +93,7 @@ export const startBaseServer = async ({
  */
 export const stopServer = (proc: ChildProcess): void => {
   try {
-    process.kill(-proc.pid, "SIGTERM");
+    process.kill(-proc.pid!, "SIGKILL");
   } catch {
     // process already exited
   }
