@@ -10,8 +10,6 @@ import fs from "fs";
 import https from "https";
 import path from "path";
 
-import FormDataLib from "form-data";
-
 /** Markers used to find and replace the screenshots block in PR descriptions. */
 const MARKER_START = "<!-- screenshots-start -->";
 const MARKER_END = "<!-- screenshots-end -->";
@@ -43,11 +41,10 @@ interface InjectOpts {
 }
 
 /**
- * Uploads a single PNG file to GitHub's user-attachments API.
+ * Uploads a single PNG file to GitHub's user-attachments API as raw binary.
  *
- * Uses the `form-data` package streamed via `https.request` so the
- * Content-Length is set from `getLengthSync()` and the body is piped
- * directly — avoiding any fetch/undici chunked-encoding issues.
+ * Sends Content-Type: image/png with Content-Length set to the exact file
+ * byte count. This matches GitHub's release-asset upload pattern.
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
@@ -60,13 +57,6 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
 
   console.log(`[upload] ${filename}: ${fileData.length} bytes`);
 
-  const form = new FormDataLib();
-  form.append("file", fileData, {
-    filename,
-    contentType: "image/png",
-    knownLength: fileData.length,
-  });
-
   return new Promise((resolve, reject) => {
     const req = https.request(
       {
@@ -78,8 +68,8 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "screenshot-action",
-          ...form.getHeaders(),
-          "Content-Length": String(form.getLengthSync()),
+          "Content-Type": "image/png",
+          "Content-Length": String(fileData.length),
         },
       },
       (res) => {
@@ -88,6 +78,8 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
           body += chunk.toString();
         });
         res.on("end", () => {
+          console.log(`[upload] response ${res.statusCode}: ${body.slice(0, 200)}`);
+
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             const { url } = JSON.parse(body) as { url: string };
             resolve(url);
@@ -99,7 +91,8 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
     );
 
     req.on("error", reject);
-    form.pipe(req);
+    req.write(fileData);
+    req.end();
   });
 };
 
