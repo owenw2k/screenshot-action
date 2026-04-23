@@ -30,9 +30,11 @@ const refExists = (ref: string): boolean => {
  * @returns Absolute path to the worktree, or null if the ref was not found.
  */
 export const addWorktree = (ref: string): string | null => {
-  if (!refExists(ref)) {
+  if (!refExists(ref) && !refExists(`origin/${ref}`)) {
     try {
-      execSync(`git fetch origin "${ref}" --depth=1`, { stdio: "pipe" });
+      // Use an explicit refspec so the remote tracking ref is written even in shallow clones
+      // where actions/checkout only fetches the PR merge commit.
+      execSync(`git fetch origin "${ref}:refs/remotes/origin/${ref}" --depth=1`, { stdio: "pipe" });
     } catch {
       // ref doesn't exist on remote — fall through to null
     }
