@@ -43,7 +43,22 @@ On non-pull_request events the action exits immediately with no side effects.
 <footer data-screenshot="footer">...</footer>
 ```
 
-**2. Add the action to your CI after starting the server:**
+**2. Add injection markers to your PR description template:**
+
+The action needs a pair of HTML comment markers to know where to inject the screenshot table. Add them to `.github/pull_request_template.md` (create the file if it does not exist):
+
+```markdown
+## Screenshots
+<!-- screenshots-start -->
+_Captured automatically by CI — push a commit to populate._
+<!-- screenshots-end -->
+```
+
+The action replaces everything between the markers on each run. The placeholder text is shown on the first push before any screenshots are captured.
+
+If your repo has no PR description template, create `.github/pull_request_template.md` with the markers above. Without the markers the action exits silently and the PR description is left unchanged.
+
+**3. Add the action to your CI after starting the server:**
 
 ```yaml
 jobs:
@@ -124,6 +139,7 @@ serve-command: pnpm start
 ## Requirements
 
 - The CI job must have `pull-requests: write` permission
+- The PR description template must contain `<!-- screenshots-start -->` and `<!-- screenshots-end -->` markers (see Quick start step 2)
 - The server must be running and healthy before the action step
 - Screenshots are captured at **1280x800** with Chromium
 - The action installs its own Chromium — if your job also runs Playwright e2e tests, install browsers explicitly before the e2e step or they will fail with "Executable doesn't exist":
