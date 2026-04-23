@@ -154,6 +154,6 @@ serve-command: pnpm start
 
 ## Versioning
 
-Use `@v2` to always get the latest v2.x release. Use `@v2.1.0` to pin to a specific version.
+Use `@v2` to always get the latest v2 release. Use `@v2.x.x` to pin to a specific version.
 
 The `v2` tag is a floating pointer updated automatically on every release — you never need to change your workflow YAML to receive patch and minor updates.
