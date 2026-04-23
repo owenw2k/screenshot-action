@@ -7,6 +7,7 @@
  */
 
 import fs from "fs";
+import https from "https";
 import path from "path";
 
 import FormDataLib from "form-data";
@@ -44,17 +45,20 @@ interface InjectOpts {
 /**
  * Uploads a single PNG file to GitHub's user-attachments API.
  *
- * Uses the `form-data` package to build the multipart body with an explicit
- * Content-Length header. GitHub's upload endpoint rejects requests that use
- * chunked transfer encoding (which native fetch + FormData sends by default).
+ * Uses the `form-data` package streamed via `https.request` so the
+ * Content-Length is set from `getLengthSync()` and the body is piped
+ * directly — avoiding any fetch/undici chunked-encoding issues.
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
+ * @throws {Error} If the upload fails or the response cannot be parsed.
  */
-const uploadImage = async ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> => {
+const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<string> => {
   const [owner, repoName] = repo.split("/");
   const filename = path.basename(filePath);
   const fileData = fs.readFileSync(filePath);
+
+  console.log(`[upload] ${filename}: ${fileData.length} bytes`);
 
   const form = new FormDataLib();
   form.append("file", fileData, {
@@ -63,30 +67,40 @@ const uploadImage = async ({ filePath, repo, prNumber, token }: UploadOpts): Pro
     knownLength: fileData.length,
   });
 
-  const formBuffer = form.getBuffer();
-
-  const res = await fetch(
-    `https://uploads.github.com/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        ...form.getHeaders(),
-        "Content-Length": String(formBuffer.length),
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        hostname: "uploads.github.com",
+        path: `/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "User-Agent": "screenshot-action",
+          ...form.getHeaders(),
+          "Content-Length": String(form.getLengthSync()),
+        },
       },
-      body: formBuffer,
-    }
-  );
+      (res) => {
+        let body = "";
+        res.on("data", (chunk: Buffer) => {
+          body += chunk.toString();
+        });
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            const { url } = JSON.parse(body) as { url: string };
+            resolve(url);
+          } else {
+            reject(new Error(`Upload failed (${res.statusCode}): ${body}`));
+          }
+        });
+      }
+    );
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Upload failed (${res.status}): ${body}`);
-  }
-
-  const { url } = (await res.json()) as { url: string };
-  return url;
+    req.on("error", reject);
+    form.pipe(req);
+  });
 };
 
 /**
