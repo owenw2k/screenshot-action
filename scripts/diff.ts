@@ -11,6 +11,13 @@ import pixelmatch from "pixelmatch";
 /** Pixel-difference threshold passed to pixelmatch (0 = exact, 1 = lenient). */
 const DIFF_THRESHOLD = 0.1;
 
+/**
+ * Minimum fraction of total pixels that must differ before a section is
+ * reported as changed. Filters out rendering noise (font hinting, subpixel
+ * anti-aliasing) that produces invisible single-pixel diffs between builds.
+ */
+const MIN_CHANGED_RATIO = 0.001;
+
 interface ScreenshotResult {
   light: string;
   dark?: string;
@@ -46,11 +53,12 @@ const imagesAreDifferent = (beforePath: string, afterPath: string): boolean => {
     return true;
   }
 
+  const totalPixels = before.width * before.height;
   const diffPixels = pixelmatch(before.data, after.data, null, before.width, before.height, {
     threshold: DIFF_THRESHOLD,
   });
 
-  return diffPixels > 0;
+  return diffPixels / totalPixels > MIN_CHANGED_RATIO;
 };
 
 /**
