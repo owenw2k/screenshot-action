@@ -9,6 +9,8 @@
 import fs from "fs";
 import path from "path";
 
+import FormDataLib from "form-data";
+
 /** Markers used to find and replace the screenshots block in PR descriptions. */
 const MARKER_START = "<!-- screenshots-start -->";
 const MARKER_END = "<!-- screenshots-end -->";
@@ -40,8 +42,11 @@ interface InjectOpts {
 }
 
 /**
- * Uploads a single PNG file to GitHub's user-attachments API using native
- * fetch + FormData so multipart encoding is handled correctly by the runtime.
+ * Uploads a single PNG file to GitHub's user-attachments API.
+ *
+ * Uses the `form-data` package to build the multipart body with an explicit
+ * Content-Length header. GitHub's upload endpoint rejects requests that use
+ * chunked transfer encoding (which native fetch + FormData sends by default).
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
@@ -51,8 +56,14 @@ const uploadImage = async ({ filePath, repo, prNumber, token }: UploadOpts): Pro
   const filename = path.basename(filePath);
   const fileData = fs.readFileSync(filePath);
 
-  const form = new FormData();
-  form.append("file", new Blob([fileData], { type: "image/png" }), filename);
+  const form = new FormDataLib();
+  form.append("file", fileData, {
+    filename,
+    contentType: "image/png",
+    knownLength: fileData.length,
+  });
+
+  const formBuffer = form.getBuffer();
 
   const res = await fetch(
     `https://uploads.github.com/repos/${owner}/${repoName}/issues/${prNumber}/assets?name=${encodeURIComponent(filename)}`,
@@ -62,8 +73,10 @@ const uploadImage = async ({ filePath, repo, prNumber, token }: UploadOpts): Pro
         Authorization: `Bearer ${token}`,
         Accept: "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
+        ...form.getHeaders(),
+        "Content-Length": String(formBuffer.length),
       },
-      body: form,
+      body: formBuffer,
     }
   );
 
