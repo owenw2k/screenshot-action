@@ -41,10 +41,11 @@ interface InjectOpts {
 }
 
 /**
- * Uploads a single PNG file to GitHub's user-attachments API as raw binary.
+ * Uploads a single PNG file to GitHub's user-attachments API using a manually
+ * constructed multipart/form-data body.
  *
- * Sends Content-Type: image/png with Content-Length set to the exact file
- * byte count. This matches GitHub's release-asset upload pattern.
+ * The entire body is built as a single Buffer before the request is made, so
+ * Content-Length is guaranteed to equal the actual bytes sent.
  *
  * @param opts - Upload options including file path, repo, PR number, and token.
  * @returns Permanent CDN URL of the uploaded image.
@@ -55,7 +56,18 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
   const filename = path.basename(filePath);
   const fileData = fs.readFileSync(filePath);
 
-  console.log(`[upload] ${filename}: ${fileData.length} bytes`);
+  const boundary = `----ScreenshotActionBoundary${Date.now().toString(16)}`;
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: image/png\r\n` +
+      `\r\n`,
+    "utf8"
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, "utf8");
+  const body = Buffer.concat([head, fileData, tail]);
+
+  console.log(`[upload] ${filename}: file=${fileData.length}B body=${body.length}B`);
 
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -68,30 +80,29 @@ const uploadImage = ({ filePath, repo, prNumber, token }: UploadOpts): Promise<s
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
           "User-Agent": "screenshot-action",
-          "Content-Type": "image/png",
-          "Content-Length": String(fileData.length),
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "Content-Length": String(body.length),
         },
       },
       (res) => {
-        let body = "";
+        let responseBody = "";
         res.on("data", (chunk: Buffer) => {
-          body += chunk.toString();
+          responseBody += chunk.toString();
         });
         res.on("end", () => {
-          console.log(`[upload] response ${res.statusCode}: ${body.slice(0, 200)}`);
-
+          console.log(`[upload] response ${res.statusCode}: ${responseBody.slice(0, 300)}`);
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
-            const { url } = JSON.parse(body) as { url: string };
+            const { url } = JSON.parse(responseBody) as { url: string };
             resolve(url);
           } else {
-            reject(new Error(`Upload failed (${res.statusCode}): ${body}`));
+            reject(new Error(`Upload failed (${res.statusCode}): ${responseBody}`));
           }
         });
       }
     );
 
     req.on("error", reject);
-    req.write(fileData);
+    req.write(body);
     req.end();
   });
 };
