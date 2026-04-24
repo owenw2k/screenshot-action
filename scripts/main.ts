@@ -6,11 +6,11 @@
  * diffs them, and injects a before/after table into the PR description.
  */
 
-import { capture } from "./capture";
-import { diff } from "./diff";
-import { uploadAndInject } from "./upload";
-import { addWorktree, removeWorktree } from "./lib/git";
-import { startBaseServer, stopServer } from "./lib/server";
+import { capture } from "./capture.js";
+import { diff } from "./diff.js";
+import { uploadAndInject } from "./upload.js";
+import { addWorktree, removeWorktree } from "./lib/git.js";
+import { startBaseServer, stopServer } from "./lib/server.js";
 
 const {
   GITHUB_TOKEN,
@@ -95,6 +95,13 @@ const main = async (): Promise<void> => {
   const diffs = diff(beforeScreenshots, afterScreenshots);
 
   // --- Upload + inject ---
+  if (!GITHUB_TOKEN) {
+    throw new Error("GITHUB_TOKEN is required");
+  }
+  if (!REPO) {
+    throw new Error("REPO is required");
+  }
+
   await uploadAndInject({
     diffs,
     prNumber: PR_NUMBER,
