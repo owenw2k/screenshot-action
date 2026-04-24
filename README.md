@@ -50,7 +50,7 @@ The action needs a pair of HTML comment markers to know where to inject the scre
 ```markdown
 ## Screenshots
 <!-- screenshots-start -->
-_Captured automatically by CI — push a commit to populate._
+_Captured automatically by CI - push a commit to populate._
 <!-- screenshots-end -->
 ```
 
@@ -91,7 +91,7 @@ jobs:
         run: fuser -k 3000/tcp 2>/dev/null || true
 ```
 
-That's it. The action is safe to leave in your CI unconditionally — it does nothing on push events.
+That's it. The action is safe to leave in your CI unconditionally - it does nothing on push events.
 
 ## Dark mode
 
@@ -109,7 +109,7 @@ If your site has a dark mode toggle, pass its accessible label and the action ca
     dark-mode-toggle-label: "switch to dark mode"
 ```
 
-The label is matched case-insensitively against the toggle button's accessible name via `getByRole("button", { name: /label/i })`. Pass any substring — if your toggle has `aria-label="Switch to dark mode"`, passing `"dark mode"` works fine.
+The label is matched case-insensitively against the toggle button's accessible name via `getByRole("button", { name: /label/i })`. Pass any substring - if your toggle has `aria-label="Switch to dark mode"`, passing `"dark mode"` works fine.
 
 ## Inputs
 
@@ -124,7 +124,7 @@ The label is matched case-insensitively against the toggle button's accessible n
 | `serve-command` | no | `npm start` | Serve command for the base-ref worktree |
 | `dark-mode-toggle-label` | no | `""` | Accessible label of the dark-mode toggle. Omit to skip dark mode. |
 
-**`base-ref`** defaults to `main`. If the ref does not exist the action skips gracefully — useful for first PRs or repos with a different default branch.
+**`base-ref`** defaults to `main`. If the ref does not exist the action skips gracefully - useful for first PRs or repos with a different default branch.
 
 **`install-command` / `build-command` / `serve-command`** run inside a temporary git worktree checked out at `base-ref`. Override all three when not using npm:
 
@@ -142,7 +142,7 @@ serve-command: pnpm start
 - The PR description template must contain `<!-- screenshots-start -->` and `<!-- screenshots-end -->` markers (see Quick start step 2)
 - The server must be running and healthy before the action step
 - Screenshots are captured at **1280x800** with Chromium
-- The action installs its own Chromium — if your job also runs Playwright e2e tests, install browsers explicitly before the e2e step or they will fail with "Executable doesn't exist":
+- The action installs its own Chromium - if your job also runs Playwright e2e tests, install browsers explicitly before the e2e step or they will fail with "Executable doesn't exist":
 
 ```yaml
 - name: Install Playwright browsers
@@ -156,4 +156,4 @@ serve-command: pnpm start
 
 Use `@v2` to always get the latest v2 release. Use `@v2.x.x` to pin to a specific version.
 
-The `v2` tag is a floating pointer updated automatically on every release — you never need to change your workflow YAML to receive patch and minor updates.
+The `v2` tag is a floating pointer updated automatically on every release - you never need to change your workflow YAML to receive patch and minor updates.

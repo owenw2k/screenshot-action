@@ -4,20 +4,20 @@
  * also captures in dark mode.
  */
 
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { chromium, Page } from "@playwright/test";
 
-interface CaptureOpts {
+type CaptureOpts = {
   baseUrl: string;
   outputDir: string;
   darkModeLabel?: string;
-}
+};
 
-interface ScreenshotResult {
+type ScreenshotResult = {
   light: string;
   dark?: string;
-}
+};
 
 /**
  * Captures screenshots for all [data-screenshot] sections reachable via baseUrl.
@@ -42,7 +42,7 @@ export const capture = async ({
 
     const sections = await lightPage.$$("[data-screenshot]");
     if (sections.length === 0) {
-      console.log("[capture] no [data-screenshot] elements found — nothing to capture");
+      console.log("[capture] no [data-screenshot] elements found, nothing to capture");
       return results;
     }
 
@@ -56,7 +56,7 @@ export const capture = async ({
 
     await lightPage.close();
 
-    // Dark mode pass — only when a toggle label is configured
+    // Dark mode pass: only when a toggle label is configured
     if (darkModeLabel) {
       const darkPage = await browser.newPage({ viewport: { width: 1280, height: 800 } });
       await darkPage.goto(baseUrl, { waitUntil: "networkidle" });
@@ -77,7 +77,7 @@ export const capture = async ({
           console.log(`[capture] ${name} (dark) → ${filePath}`);
         }
       } else {
-        console.log(`[capture] dark-mode toggle not found — skipping dark captures`);
+        console.log(`[capture] dark-mode toggle not found, skipping dark captures`);
       }
 
       await darkPage.close();

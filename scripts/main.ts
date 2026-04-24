@@ -31,7 +31,7 @@ const {
  */
 const main = async (): Promise<void> => {
   if (EVENT_NAME !== "pull_request") {
-    console.log(`[main] event is "${EVENT_NAME}" — nothing to do`);
+    console.log(`[main] event is "${EVENT_NAME}"; nothing to do`);
     return;
   }
 
