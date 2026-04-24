@@ -27,11 +27,26 @@ interface DiffEntry {
 
 interface UploadOpts {
   filePath: string;
+  assetName: string;
   releaseId: number;
   repo: string;
-  prNumber: string;
   token: string;
 }
+
+/**
+ * Derives a unique CDN asset name from a screenshot file path.
+ * Includes the "before" or "after" directory segment so before and after
+ * images for the same section don't overwrite each other.
+ *
+ * @param prNumber - Pull request number.
+ * @param filePath - Path to the screenshot file, e.g. "screenshots-before/hero-light.png".
+ * @returns Asset name, e.g. "pr26-before-hero-light.png".
+ */
+const toAssetName = (prNumber: string, filePath: string): string => {
+  const dir = path.basename(path.dirname(filePath));
+  const prefix = dir === "screenshots-before" ? "before-" : "after-";
+  return `pr${prNumber}-${prefix}${path.basename(filePath)}`;
+};
 
 interface PrOpts {
   repo: string;
@@ -161,10 +176,8 @@ const deleteExistingAsset = async (
  * @returns Permanent `browser_download_url` for the uploaded asset
  * @throws {Error} If the upload fails or the response cannot be parsed
  */
-const uploadImage = ({ filePath, releaseId, repo, prNumber, token }: UploadOpts): Promise<string> =>
+const uploadImage = ({ filePath, assetName, releaseId, repo, token }: UploadOpts): Promise<string> =>
   new Promise((resolve, reject) => {
-    const filename = path.basename(filePath);
-    const assetName = `pr${prNumber}-${filename}`;
     const fileData = fs.readFileSync(filePath);
 
     console.log(`[upload] ${assetName}: ${fileData.length}B`);
@@ -346,12 +359,11 @@ export const uploadAndInject = async ({
   console.log(`[upload] uploading ${filePaths.size} image(s) to release id=${releaseId}`);
   const urls: Record<string, string> = {};
   for (const filePath of filePaths) {
-    const filename = path.basename(filePath);
-    const assetName = `pr${prNumber}-${filename}`;
+    const assetName = toAssetName(prNumber, filePath);
     await deleteExistingAsset(repo, releaseId, assetName, token);
-    const url = await uploadImage({ filePath, releaseId, repo, prNumber, token });
+    const url = await uploadImage({ filePath, assetName, releaseId, repo, token });
     urls[filePath] = url;
-    console.log(`[upload] ${filename} → ${url}`);
+    console.log(`[upload] ${assetName} → ${url}`);
   }
 
   const sections = Object.entries(diffs)
