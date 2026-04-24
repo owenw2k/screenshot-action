@@ -13,7 +13,7 @@ When a PR changes a UI section, the action automatically updates the PR descript
 | Light | ![before light](https://example.com) | ![after light](https://example.com) |
 | Dark | ![before dark](https://example.com) | ![after dark](https://example.com) |
 
-New sections with no baseline are labelled **(new)**. Sections that did not change are not shown at all.
+New sections with no baseline are labelled **(new)**. Sections that did not change are not shown. When a PR has no `data-screenshot` sections at all, or none of them changed, the action injects "_No UI changes in this PR._" into the markers instead of leaving the placeholder.
 
 ## How it works
 
@@ -56,7 +56,7 @@ _Captured automatically by CI - push a commit to populate._
 
 The action replaces everything between the markers on each run. The placeholder text is shown on the first push before any screenshots are captured.
 
-If your repo has no PR description template, create `.github/pull_request_template.md` with the markers above. Without the markers the action exits silently and the PR description is left unchanged.
+If your repo has no PR description template, create `.github/pull_request_template.md` with the markers above. Without the markers the action appends the screenshot block to the end of the PR description.
 
 **3. Add the action to your CI after starting the server:**
 
