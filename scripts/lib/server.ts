@@ -64,10 +64,10 @@ export const startBaseServer = async ({
   port,
 }: StartServerOpts): Promise<ChildProcess> => {
   console.log(`[server] installing dependencies in worktree: ${installCommand}`);
-  execSync(installCommand, { cwd, stdio: "inherit", shell: true });
+  execSync(installCommand, { cwd, stdio: "inherit" });
 
   console.log(`[server] building base-ref: ${buildCommand}`);
-  execSync(buildCommand, { cwd, stdio: "inherit", shell: true });
+  execSync(buildCommand, { cwd, stdio: "inherit" });
 
   console.log(`[server] starting base-ref server on port ${port}: ${serveCommand}`);
   const proc = spawn(serveCommand, {
