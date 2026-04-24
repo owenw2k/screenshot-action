@@ -47,11 +47,6 @@ const main = async (): Promise<void> => {
     darkModeLabel: DARK_MODE_LABEL || undefined,
   });
 
-  if (Object.keys(afterScreenshots).length === 0) {
-    console.log("[main] no sections found — exiting");
-    return;
-  }
-
   // --- Capture "before" (base-ref in a worktree) ---
   let beforeScreenshots: Record<string, { light: string; dark?: string }> = {};
   let baseProc = null;
