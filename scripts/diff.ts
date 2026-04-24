@@ -4,7 +4,7 @@
  * that actually changed (or are new with no before).
  */
 
-import fs from "fs";
+import fs from "node:fs";
 import { PNG } from "pngjs";
 import pixelmatch from "pixelmatch";
 
@@ -18,16 +18,16 @@ const DIFF_THRESHOLD = 0.1;
  */
 const MIN_CHANGED_RATIO = 0.001;
 
-interface ScreenshotResult {
+type ScreenshotResult = {
   light: string;
   dark?: string;
-}
+};
 
-interface DiffEntry {
+type DiffEntry = {
   isNew: boolean;
   before?: ScreenshotResult;
   after: ScreenshotResult;
-}
+};
 
 /**
  * Reads a PNG file and returns a parsed PNG object.

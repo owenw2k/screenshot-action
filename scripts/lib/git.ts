@@ -2,10 +2,10 @@
  * Git worktree helpers for checking out a base ref without touching the main workspace.
  */
 
-import { execSync, spawnSync } from "child_process";
-import fs from "fs";
-import os from "os";
-import path from "path";
+import { execSync, spawnSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const WORKTREE_PATH = path.join(os.tmpdir(), "screenshot-base");
 
@@ -41,12 +41,12 @@ export const addWorktree = (ref: string): string | null => {
         cwd: REPO_CWD,
       });
     } catch {
-      // ref doesn't exist on remote — fall through to null
+      // ref doesn't exist on remote; fall through to null
     }
   }
 
   if (!refExists(ref) && !refExists(`origin/${ref}`)) {
-    console.log(`[git] ref "${ref}" not found — skipping before screenshots`);
+    console.log(`[git] ref "${ref}" not found, skipping before screenshots`);
     return null;
   }
 

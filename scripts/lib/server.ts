@@ -2,8 +2,8 @@
  * Helpers for starting and stopping the base-ref dev server in a worktree.
  */
 
-import { ChildProcess, execSync, spawn } from "child_process";
-import http from "http";
+import { ChildProcess, execSync, spawn } from "node:child_process";
+import http from "node:http";
 
 /**
  * Polls a URL until it responds with a non-error status, up to a timeout.
@@ -41,13 +41,13 @@ const waitForServer = (url: string, timeoutMs = 60_000): Promise<void> =>
     poll();
   });
 
-interface StartServerOpts {
+type StartServerOpts = {
   cwd: string;
   installCommand: string;
   buildCommand: string;
   serveCommand: string;
   port: number;
-}
+};
 
 /**
  * Runs install and build commands in the worktree, then starts the server.

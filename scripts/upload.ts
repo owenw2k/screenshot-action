@@ -8,9 +8,9 @@
  * uploads).
  */
 
-import fs from "fs";
-import https from "https";
-import path from "path";
+import fs from "node:fs";
+import https from "node:https";
+import path from "node:path";
 
 /** Markers used to find and replace the screenshots block in PR descriptions. */
 const MARKER_START = "<!-- screenshots-start -->";
@@ -19,19 +19,19 @@ const MARKER_END = "<!-- screenshots-end -->";
 /** Tag used for the hidden CDN release that stores screenshot assets. */
 const CDN_RELEASE_TAG = "screenshots-cdn";
 
-interface DiffEntry {
+type DiffEntry = {
   isNew: boolean;
   before?: { light: string; dark?: string };
   after: { light: string; dark?: string };
-}
+};
 
-interface UploadOpts {
+type UploadOpts = {
   filePath: string;
   assetName: string;
   releaseId: number;
   repo: string;
   token: string;
-}
+};
 
 /**
  * Derives a unique CDN asset name from a screenshot file path.
@@ -48,18 +48,18 @@ const toAssetName = (prNumber: string, filePath: string): string => {
   return `pr${prNumber}-${prefix}${path.basename(filePath)}`;
 };
 
-interface PrOpts {
+type PrOpts = {
   repo: string;
   prNumber: string;
   token: string;
-}
+};
 
-interface InjectOpts {
+type InjectOpts = {
   diffs: Record<string, DiffEntry>;
   prNumber: string;
   repo: string;
   token: string;
-}
+};
 
 /**
  * Makes an authenticated request to the GitHub REST API.
@@ -327,7 +327,7 @@ export const uploadAndInject = async ({
   token,
 }: InjectOpts): Promise<void> => {
   if (Object.keys(diffs).length === 0) {
-    console.log("[upload] no changed sections — injecting no-changes message");
+    console.log("[upload] no changed sections, injecting no-changes message");
     const currentBody = await getPrBody({ repo, prNumber, token });
     const newBody = injectIntoBody(currentBody, "_No UI changes in this PR._");
     await updatePrBody({ repo, prNumber, token, body: newBody });
