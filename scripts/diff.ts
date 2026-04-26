@@ -54,7 +54,7 @@ const imagesAreDifferent = (beforePath: string, afterPath: string): boolean => {
   }
 
   const totalPixels = before.width * before.height;
-  const diffPixels = pixelmatch(before.data, after.data, null, before.width, before.height, {
+  const diffPixels = pixelmatch(before.data, after.data, undefined, before.width, before.height, {
     threshold: DIFF_THRESHOLD,
   });
 
