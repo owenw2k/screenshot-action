@@ -4,7 +4,7 @@
   "description": "GitHub composite action for element-level PR screenshots with before/after diff",
   "private": true,
   "dependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "pixelmatch": "7.1.0",
     "pngjs": "^7.0.0",
     "tsx": "^4.21.0"
